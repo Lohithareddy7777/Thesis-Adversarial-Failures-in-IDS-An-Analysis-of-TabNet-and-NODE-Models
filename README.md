@@ -54,3 +54,9 @@ A structured pipeline is followed throughout the experiments:
 ---
 
 ## 📂 Repository Structure  
+├── data/ # Dataset files
+├── preprocessing/ # Lasso & PCA scripts
+├── models/ # TabNet, NODE implementations
+├── experiments/ # Training scripts
+├── results/ # Outputs & metrics
+└── README.md

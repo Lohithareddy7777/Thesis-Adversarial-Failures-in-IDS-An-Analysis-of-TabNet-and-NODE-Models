@@ -1,15 +1,15 @@
 # Core Dependencies
-numpy>=1.24.0
-pandas>=2.0.0
-scikit-learn>=1.3.0
+numpy>=1.24.0  # Numerical computing with arrays and matrices
+pandas>=2.0.0  # Data manipulation and analysis library
+scikit-learn>=1.3.0  # Machine learning algorithms and tools
 
 # Deep Learning
-torch>=2.0.0
-pytorch-tabnet>=4.0
+torch>=2.0.0  # PyTorch deep learning framework
+pytorch-tabnet>=4.0  # Neural network model optimized for tabular data
 
 # Visualization
-matplotlib>=3.7.0
-seaborn>=0.12.0
+matplotlib>=3.7.0  # 2D plotting and visualization library
+seaborn>=0.12.0  # Statistical data visualization built on matplotlib
 
 # Utilities
-tqdm>=4.65.0
+tqdm>=4.65.0  # Progress bar for loops and iterative processes

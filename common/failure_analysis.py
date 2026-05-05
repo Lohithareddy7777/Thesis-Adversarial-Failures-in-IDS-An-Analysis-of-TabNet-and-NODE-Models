@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 import os
 
 from common.metrics import identify_failure_samples
 from common.utils import print_section_header, print_dict_block
+from common.visualization import plot_failure_characteristics, plot_rq2_summary, plot_model_failure_comparison
 
 
 class FailureAnalyzer:
@@ -12,6 +13,16 @@ class FailureAnalyzer:
     def __init__(self, output_dir: str = "results"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
+    
+    def identify_failure_indices(
+        self,
+        y_true: np.ndarray,
+        y_pred_baseline: np.ndarray,
+        y_pred_adversarial: np.ndarray
+    ) -> np.ndarray:
+        """Identify indices of samples that failed (prediction changed due to adversarial attack)."""
+        failures = (y_pred_baseline == y_true) & (y_pred_adversarial != y_true)
+        return np.where(failures)[0]
     
     def analyze_failures(
         self,
@@ -25,6 +36,7 @@ class FailureAnalyzer:
         model_name: str,
         attack_type: str
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Analyze failure samples."""
         print_section_header(f"FAILURE MODE ANALYSIS: {model_name} - {attack_type}")
         
         failure_indices, failure_stats = identify_failure_samples(
@@ -51,22 +63,19 @@ class FailureAnalyzer:
             for i in range(n_features_to_add):
                 failure_df[feature_names[i]] = X[failure_indices, i]
             
-            failure_analysis = self._analyze_failure_patterns(
-                failure_df, X[failure_indices], feature_names
-            )
+            failure_analysis = self._analyze_failure_patterns(failure_df, X[failure_indices], feature_names)
             failure_stats.update(failure_analysis)
+            failure_stats['mean_confidence_drop'] = float(failure_df['confidence_drop'].mean())
+            failure_stats['max_confidence_drop'] = float(failure_df['confidence_drop'].max())
         else:
             failure_df = pd.DataFrame()
-            print("\nNo failures detected!")
+            failure_stats['mean_confidence_drop'] = 0.0
+            failure_stats['max_confidence_drop'] = 0.0
         
         return failure_df, failure_stats
     
-    def _analyze_failure_patterns(
-        self,
-        failure_df: pd.DataFrame,
-        X_failures: np.ndarray,
-        feature_names: list
-    ) -> Dict[str, Any]:
+    def _analyze_failure_patterns(self, failure_df: pd.DataFrame, X_failures: np.ndarray, feature_names: list) -> Dict[str, Any]:
+        """Analyze patterns in failed samples."""
         analysis = {}
         
         high_conf_baseline = failure_df['baseline_confidence'] > 0.8
@@ -76,13 +85,10 @@ class FailureAnalyzer:
         analysis['prediction_flips'] = int(flipped.sum())
         
         large_drops = (failure_df['confidence_drop'] > 0.3).sum()
-        medium_drops = ((failure_df['confidence_drop'] > 0.1) & 
-                       (failure_df['confidence_drop'] <= 0.3)).sum()
-        small_drops = (failure_df['confidence_drop'] <= 0.1).sum()
+        medium_drops = ((failure_df['confidence_drop'] > 0.1) & (failure_df['confidence_drop'] <= 0.3)).sum()
         
         analysis['large_confidence_drops'] = int(large_drops)
         analysis['medium_confidence_drops'] = int(medium_drops)
-        analysis['small_confidence_drops'] = int(small_drops)
         
         if len(X_failures) > 0:
             analysis['feature_mean_failures'] = X_failures.mean(axis=0).tolist()[:10]
@@ -98,8 +104,8 @@ class FailureAnalyzer:
         y_pred_adversarial: np.ndarray,
         threshold: float = 0.2
     ) -> Dict[str, Any]:
+        """Identify vulnerable samples."""
         confidence_drop = confidence_baseline - confidence_adversarial
-        
         vulnerable = confidence_drop > threshold
         flipped = (y_pred_baseline != y_pred_adversarial)
         
@@ -114,17 +120,9 @@ class FailureAnalyzer:
         
         return analysis
     
-    def compare_model_failures(
-        self,
-        tabnet_failures: Dict[str, Any],
-        node_failures: Dict[str, Any]
-    ) -> pd.DataFrame:
-        comparison_data = {
-            'Metric': [],
-            'TabNet': [],
-            'NODE': [],
-            'Difference': []
-        }
+    def compare_model_failures(self, tabnet_failures: Dict[str, Any], node_failures: Dict[str, Any]) -> pd.DataFrame:
+        """Compare failure statistics between TabNet and NODE models."""
+        comparison_data = {'Metric': [], 'TabNet': [], 'NODE': [], 'Difference': []}
         
         common_metrics = set(tabnet_failures.keys()) & set(node_failures.keys())
         
@@ -140,8 +138,8 @@ class FailureAnalyzer:
         
         df = pd.DataFrame(comparison_data)
         
-        comparison_path = os.path.join(self.output_dir, 'model_failure_comparison.csv')
-        df.to_csv(comparison_path, index=False)
-        print(f"\nSaved model comparison to: {comparison_path}")
+        # Save comparison plot
+        plot_path = os.path.join(self.output_dir, 'model_failure_comparison.png')
+        plot_model_failure_comparison(df, "Model Failure Comparison", plot_path)
         
         return df

@@ -3,8 +3,10 @@ import torch
 import torch.nn as nn
 from pytorch_tabnet.tab_model import TabNetClassifier
 from typing import Tuple
+import logging
 
 from common.utils import get_feature_bounds, clip_to_bounds
+logger = logging.getLogger(__name__)
 
 
 class AdversarialAttacker:
@@ -29,7 +31,7 @@ class AdversarialAttacker:
         epsilon: float = 0.1,
         clip_bounds: Tuple[np.ndarray, np.ndarray] = None
     ) -> np.ndarray:
-        print(f"Generating FGSM adversarial examples (epsilon={epsilon})...")
+        logger.debug(f"FGSM attack (epsilon={epsilon})")
         
         model.eval()
         
@@ -45,8 +47,6 @@ class AdversarialAttacker:
         if clip_bounds is not None:
             min_bounds, max_bounds = clip_bounds
             X_adv = clip_to_bounds(X_adv, min_bounds, max_bounds)
-        
-        print(f"Generated {len(X_adv)} adversarial examples")
         return X_adv
 
     def pgd_attack(
@@ -60,7 +60,7 @@ class AdversarialAttacker:
         random_start: bool = True,
         clip_bounds: Tuple[np.ndarray, np.ndarray] = None,
     ) -> np.ndarray:
-        print(f"Generating PGD adversarial examples (epsilon={epsilon}, alpha={alpha}, iters={num_iter})...")
+        logger.debug(f"PGD attack (epsilon={epsilon}, alpha={alpha}, iters={num_iter})")
 
         model.eval()
         X_orig = torch.FloatTensor(X).to(self.device)
@@ -88,7 +88,6 @@ class AdversarialAttacker:
                 X_adv = torch.max(torch.min(X_adv, max_t), min_t)
 
         X_adv_np = X_adv.detach().cpu().numpy()
-        print(f"Generated {len(X_adv_np)} adversarial examples")
         return X_adv_np
     
     def fgsm_attack_tabnet(
@@ -99,8 +98,7 @@ class AdversarialAttacker:
         epsilon: float = 0.1,
         clip_bounds: Tuple[np.ndarray, np.ndarray] = None
     ) -> np.ndarray:
-        print(f"Generating FGSM adversarial examples for TabNet (epsilon={epsilon})...")
-        
+        # TabNet wrapper — uses underlying network
         network = model.network
         return self.fgsm_attack(network, X, y, epsilon, clip_bounds)
 
@@ -167,9 +165,8 @@ class AdversarialAttacker:
         perturbation_ratio: float = 0.1,
         clip_bounds: Tuple[np.ndarray, np.ndarray] = None
     ) -> np.ndarray:
-        print(f"Generating bounded perturbation attack "
-              f"(epsilon={epsilon}, ratio={perturbation_ratio})...")
-        
+        logger.debug(f"Bounded perturbation attack (epsilon={epsilon}, ratio={perturbation_ratio})")
+
         X_adv = X.copy()
         n_samples, n_features = X.shape
         
@@ -188,6 +185,4 @@ class AdversarialAttacker:
             X_adv[i, perturb_indices] += perturbations
         
         X_adv = clip_to_bounds(X_adv, min_bounds, max_bounds)
-        
-        print(f"Generated {len(X_adv)} perturbed examples")
         return X_adv

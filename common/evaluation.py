@@ -5,10 +5,10 @@ import os
 
 from common.metrics import (
     compute_baseline_metrics,
-    compute_adversarial_metrics,
     compute_metric_degradation
 )
 from common.utils import print_section_header, print_dict_block
+from common.visualization import plot_dataframe_table
 
 
 class ModelEvaluator:
@@ -41,7 +41,7 @@ class ModelEvaluator:
     ) -> Dict[str, float]:
         print_section_header(f"ADVERSARIAL EVALUATION: {model_name} - {attack_type}")
         
-        metrics = compute_adversarial_metrics(y_true, y_pred, y_proba)
+        metrics = compute_baseline_metrics(y_true, y_pred, y_proba)
         print_dict_block("Adversarial Metrics:", metrics)
         
         return metrics
@@ -94,8 +94,8 @@ class ModelEvaluator:
         df = pd.DataFrame(rows)
         
         if save_csv:
-            csv_path = os.path.join(self.output_dir, 'evaluation_summary.csv')
-            df.to_csv(csv_path, index=False)
-            print(f"\nSaved evaluation summary to: {csv_path}")
+            out_path = os.path.join(self.output_dir, 'evaluation_summary.png')
+            plot_dataframe_table(df, "Evaluation Summary", out_path)
+            print(f"\nSaved evaluation summary plot to: {out_path}")
         
         return df

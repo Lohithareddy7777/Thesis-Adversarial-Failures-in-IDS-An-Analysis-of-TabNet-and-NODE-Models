@@ -9,6 +9,25 @@ from sklearn.metrics import (
 from typing import Dict, Any, Tuple
 
 
+def compute_array_stats(arr: np.ndarray, name: str = "Values") -> Dict[str, float]:
+    """
+    Compute mean, max, std, and L2 norm for an array.
+    
+    Args:
+        arr: NumPy array to analyze
+        name: Name of the array (for reference)
+    
+    Returns:
+        Dictionary with 'mean', 'max', 'std', 'l2_norm' keys
+    """
+    return {
+        f'mean_{name.lower()}': float(np.mean(arr)),
+        f'max_{name.lower()}': float(np.max(arr)),
+        f'std_{name.lower()}': float(np.std(arr)),
+        f'l2_{name.lower()}': float(np.linalg.norm(arr))
+    }
+
+
 def compute_baseline_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray) -> Dict[str, float]:
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
@@ -32,8 +51,7 @@ def compute_baseline_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: np
     return metrics
 
 
-def compute_adversarial_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_proba: np.ndarray) -> Dict[str, float]:
-    return compute_baseline_metrics(y_true, y_pred, y_proba)
+
 
 
 def compute_metric_degradation(baseline: Dict[str, float], adversarial: Dict[str, float]) -> Dict[str, float]:

@@ -4,8 +4,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.feature_selection import VarianceThreshold
 from typing import Tuple, List
 import os
+import logging
 
 from common.utils import set_random_seed
+from common.visualization import plot_feature_importance
+
+logger = logging.getLogger(__name__)
 
 
 class UNSW_FeatureSelector:
@@ -24,7 +28,7 @@ class UNSW_FeatureSelector:
         feature_names: List[str],
         threshold: float = 0.01
     ) -> Tuple[np.ndarray, List[str]]:
-        print(f"Removing low variance features (threshold={threshold})...")
+        logger.info(f"Removing low variance features (threshold={threshold})...")
         
         selector = VarianceThreshold(threshold=threshold)
         X_filtered = selector.fit_transform(X)
@@ -33,8 +37,8 @@ class UNSW_FeatureSelector:
         filtered_features = [f for f, m in zip(feature_names, mask) if m]
         
         removed = len(feature_names) - len(filtered_features)
-        print(f"Removed {removed} low variance features")
-        print(f"Remaining features: {len(filtered_features)}")
+        logger.info(f"Removed {removed} low variance features")
+        logger.info(f"Remaining features: {len(filtered_features)}")
         
         return X_filtered, filtered_features
     
@@ -44,7 +48,7 @@ class UNSW_FeatureSelector:
         feature_names: List[str],
         threshold: float = 0.90
     ) -> Tuple[np.ndarray, List[str]]:
-        print(f"Removing highly correlated features (threshold={threshold})...")
+        logger.info(f"Removing highly correlated features (threshold={threshold})...")
         
         df = pd.DataFrame(X, columns=feature_names)
         corr_matrix = df.corr().abs()
@@ -104,8 +108,8 @@ class UNSW_FeatureSelector:
         
         self.feature_importance = importance_df
         
-        print("Top 10 most important features:")
-        print(importance_df.head(10).to_string(index=False))
+        logger.info("Top 10 most important features:")
+        logger.info("\n" + importance_df.head(10).to_string(index=False))
         
         return importance_df
     
@@ -116,7 +120,7 @@ class UNSW_FeatureSelector:
         importance_df: pd.DataFrame,
         k: int = 10
     ) -> Tuple[np.ndarray, List[str], List[int]]:
-        print(f"\nSelecting top {k} features...")
+        logger.info(f"Selecting top {k} features...")
         
         top_features = importance_df.head(k)['feature'].tolist()
         top_indices = [feature_names.index(f) for f in top_features]
@@ -126,7 +130,7 @@ class UNSW_FeatureSelector:
         self.selected_features = top_features
         self.top_k_indices = top_indices
         
-        print(f"Selected features: {top_features}")
+        logger.info(f"Selected features: {top_features}")
         
         return X_topk, top_features, top_indices
     
@@ -141,10 +145,10 @@ class UNSW_FeatureSelector:
         correlation_threshold: float = 0.90,
         importance_method: str = "lasso"
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], pd.DataFrame]:
-        print("="*80)
-        print("UNSW-NB15 FEATURE SELECTION PIPELINE")
-        print("="*80)
-        print(f"Initial features: {len(feature_names)}")
+        logger.info("="*80)
+        logger.info("UNSW-NB15 FEATURE SELECTION PIPELINE")
+        logger.info("="*80)
+        logger.info(f"Initial features: {len(feature_names)}")
         
         X_train_filt, features_filt = self.remove_low_variance(
             X_train, feature_names, variance_threshold
@@ -166,17 +170,16 @@ class UNSW_FeatureSelector:
         X_test_topk = X_test_filt[:, topk_indices_filt]
         
         print("\n" + "="*80)
-        print("FEATURE SELECTION COMPLETE")
-        print("="*80)
-        print(f"Full feature set: {X_train_filt.shape[1]} features")
-        print(f"Top-{top_k} feature set: {X_train_topk.shape[1]} features")
+        logger.info("FEATURE SELECTION COMPLETE")
+        logger.info("="*80)
+        logger.info(f"Full feature set: {X_train_filt.shape[1]} features")
+        logger.info(f"Top-{top_k} feature set: {X_train_topk.shape[1]} features")
         
         return (X_train_filt, X_test_filt, X_train_topk, X_test_topk, 
                 topk_features, importance_df)
     
     def save_feature_selection_results(self, output_dir: str, importance_df: pd.DataFrame):
         os.makedirs(output_dir, exist_ok=True)
-        
-        importance_path = os.path.join(output_dir, 'feature_importance.csv')
-        importance_df.to_csv(importance_path, index=False)
-        print(f"Saved feature importance to: {importance_path}")
+        plot_path = os.path.join(output_dir, 'feature_importance.png')
+        plot_feature_importance(importance_df, "Feature Importance", plot_path)
+        logger.info(f"Saved feature importance plot to: {plot_path}")

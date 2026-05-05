@@ -1,13 +1,17 @@
 import pandas as pd
 import numpy as np
+from pandas.api.types import is_numeric_dtype
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.feature_selection import SelectFromModel
 from sklearn.linear_model import LogisticRegression
 from typing import Tuple
+from pathlib import Path
 import os
+import logging
 
 from common.utils import set_random_seed
+logger = logging.getLogger(__name__)
 
 
 class UNSW_NB15_Preprocessor:
@@ -21,6 +25,14 @@ class UNSW_NB15_Preprocessor:
         self.lasso_selector = None
         
         set_random_seed(random_state)
+
+    def _read_csv(self, path: str) -> pd.DataFrame:
+        for encoding in ("utf-8", "latin-1", "cp1252"):
+            try:
+                return pd.read_csv(path, skipinitialspace=True, low_memory=False, encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        return pd.read_csv(path, skipinitialspace=True, low_memory=False, encoding_errors="replace")
     
     def load_data(self, file_pattern: str = "UNSW_NB15_training-set.csv") -> pd.DataFrame:
         possible_paths = [
@@ -30,25 +42,50 @@ class UNSW_NB15_Preprocessor:
         ]
         
         for path in possible_paths:
-            if os.path.exists(path):
-                print(f"Loading data from: {path}")
-                df = pd.read_csv(path)
-                print(f"Loaded {len(df)} samples with {len(df.columns)} features")
+            if os.path.isfile(path):
+                logger.info(f"Loading data from: {path}")
+                df = self._read_csv(path)
+                df.columns = df.columns.str.strip()
+                logger.info(f"Loaded {len(df)} samples with {len(df.columns)} features")
+                return df
+
+        directory_candidates = [
+            os.path.join(self.data_dir, file_pattern),
+            self.data_dir,
+        ]
+
+        for directory in directory_candidates:
+            if not os.path.isdir(directory):
+                continue
+
+            csv_files = sorted(Path(directory).glob("*.csv"))
+            if not csv_files:
+                csv_files = sorted(Path(directory).rglob("*.csv"))
+
+            if csv_files:
+                logger.info(f"Loading data from directory: {directory}")
+                frames = [self._read_csv(str(csv_file)) for csv_file in csv_files]
+                for frame in frames:
+                    frame.columns = frame.columns.str.strip()
+                df = pd.concat(frames, ignore_index=True, sort=False)
+                logger.info(f"Loaded {len(df)} samples with {len(df.columns)} features from {len(csv_files)} CSV files")
                 return df
         
         raise FileNotFoundError(f"Could not find dataset file: {file_pattern}")
     
     def clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        print(f"Initial shape: {df.shape}")
+        logger.info(f"Initial shape: {df.shape}")
         
         id_cols = [col for col in df.columns if 'id' in col.lower()]
         if id_cols:
-            print(f"Removing identifier columns: {id_cols}")
+            logger.info(f"Removing identifier columns: {id_cols}")
             df = df.drop(columns=id_cols)
-        
+        # Replace infinite values with NaN so they are handled below
+        df = df.replace([np.inf, -np.inf], np.nan)
+
         missing_before = df.isnull().sum().sum()
         if missing_before > 0:
-            print(f"Handling {missing_before} missing values")
+            logger.info(f"Handling {missing_before} missing values")
             
             num_cols = df.select_dtypes(include=[np.number]).columns
             df[num_cols] = df[num_cols].fillna(df[num_cols].median())
@@ -59,10 +96,21 @@ class UNSW_NB15_Preprocessor:
         
         duplicates_before = df.duplicated().sum()
         if duplicates_before > 0:
-            print(f"Removing {duplicates_before} duplicate rows")
+            logger.info(f"Removing {duplicates_before} duplicate rows")
             df = df.drop_duplicates()
         
-        print(f"Final shape after cleaning: {df.shape}")
+        # After filling missing values, ensure numeric columns contain finite values
+        num_cols = df.select_dtypes(include=[np.number]).columns
+        for col in num_cols:
+            col_vals = df[col]
+            if not np.all(np.isfinite(col_vals)) or np.nanmax(np.abs(col_vals)) > 1e12:
+                median = np.nanmedian(col_vals)
+                if np.isnan(median):
+                    median = 0.0
+                mask = ~np.isfinite(col_vals) | (np.abs(col_vals) > 1e12)
+                df.loc[mask, col] = median
+
+        logger.info(f"Final shape after cleaning: {df.shape}")
         return df
     
     def encode_categorical(self, df: pd.DataFrame, fit: bool = True, log: bool = True) -> pd.DataFrame:
@@ -70,7 +118,7 @@ class UNSW_NB15_Preprocessor:
         
         if len(cat_cols) > 0:
             if log:
-                print(f"Encoding categorical columns: {list(cat_cols)}")
+                logger.info(f"Encoding categorical columns: {list(cat_cols)}")
             
             for col in cat_cols:
                 if fit:
@@ -103,7 +151,7 @@ class UNSW_NB15_Preprocessor:
         max_features: int | None = None,
         C: float = 1.0,
     ) -> Tuple[np.ndarray, np.ndarray, list]:
-        print("Applying Lasso prefilter...")
+        logger.info("Applying Lasso prefilter...")
         model = LogisticRegression(
             penalty="l1",
             solver="liblinear",
@@ -121,14 +169,15 @@ class UNSW_NB15_Preprocessor:
         selected_features = [f for f, keep in zip(feature_names, mask) if keep]
         self.lasso_selector = selector
 
-        print(f"Lasso prefilter kept {len(selected_features)} / {len(feature_names)} features")
+        logger.info(f"Lasso prefilter kept {len(selected_features)} / {len(feature_names)} features")
         return X_train_sel, X_test_sel, selected_features
     
     def prepare_train_test_split(
         self, 
         df: pd.DataFrame, 
         label_column: str = 'label',
-        test_size: float = 0.2
+        test_size: float = 0.2,
+        max_rows: int | None = None
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
         possible_labels = [label_column, 'Label', 'attack_cat', 'Label_binary']
         label_col = None
@@ -141,7 +190,16 @@ class UNSW_NB15_Preprocessor:
         if label_col is None:
             raise ValueError(f"Could not find label column. Available columns: {df.columns.tolist()}")
         
-        print(f"Using label column: {label_col}")
+        logger.info(f"Using label column: {label_col}")
+
+        if max_rows is not None and len(df) > max_rows:
+            logger.info(f"Sampling down to {max_rows} rows for faster training while preserving class balance")
+            df, _ = train_test_split(
+                df,
+                train_size=max_rows,
+                random_state=self.random_state,
+                stratify=df[label_col],
+            )
         
         X = df.drop(columns=[label_col]).copy()
         y = df[label_col].copy()
@@ -151,11 +209,14 @@ class UNSW_NB15_Preprocessor:
         leakage_candidates.discard(label_col)
         leakage_cols = [col for col in X.columns if col in leakage_candidates]
         if leakage_cols:
-            print(f"Removing leakage-prone label proxy columns: {leakage_cols}")
+            logger.info(f"Removing leakage-prone label proxy columns: {leakage_cols}")
             X = X.drop(columns=leakage_cols)
         
-        if y.dtype == 'object':
-            y = (y != 'normal').astype(int)
+        if not is_numeric_dtype(y):
+            # Treat common normal labels as background/0 for string/categorical labels.
+            normal_tokens = {"normal", "benign"}
+            y_lower = y.astype(str).str.strip().str.lower()
+            y = (~y_lower.isin(normal_tokens)).astype(int)
         elif len(np.unique(y)) > 2:
             y = (y != 0).astype(int)
         
@@ -173,10 +234,10 @@ class UNSW_NB15_Preprocessor:
         X_train = X_train_df.values
         X_test = X_test_df.values
         
-        print(f"Train set: {X_train.shape[0]} samples")
-        print(f"Test set: {X_test.shape[0]} samples")
-        print(f"Attack rate in train: {np.mean(y_train):.2%}")
-        print(f"Attack rate in test: {np.mean(y_test):.2%}")
+        logger.info(f"Train set: {X_train.shape[0]} samples")
+        logger.info(f"Test set: {X_test.shape[0]} samples")
+        logger.info(f"Attack rate in train: {np.mean(y_train):.2%}")
+        logger.info(f"Attack rate in test: {np.mean(y_test):.2%}")
         
         return X_train, X_test, y_train, y_test, self.feature_names
     
@@ -186,17 +247,18 @@ class UNSW_NB15_Preprocessor:
         label_column: str = 'label',
         use_lasso_prefilter: bool = False,
         lasso_max_features: int | None = None,
+        max_rows: int | None = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
-        print("="*80)
-        print("UNSW-NB15 PREPROCESSING PIPELINE")
-        print("="*80)
+        logger.info("="*80)
+        logger.info("UNSW-NB15 PREPROCESSING PIPELINE")
+        logger.info("="*80)
         
         df = self.load_data(file_pattern)
         
         df = self.clean_data(df)
         
         X_train, X_test, y_train, y_test, feature_names = self.prepare_train_test_split(
-            df, label_column
+            df, label_column, max_rows=max_rows
         )
         
         X_train = self.normalize_features(X_train, fit=True)
@@ -211,7 +273,7 @@ class UNSW_NB15_Preprocessor:
                 max_features=lasso_max_features,
             )
         
-        print("\nPreprocessing complete!")
-        print("="*80)
+        logger.info("Preprocessing complete!")
+        logger.info("="*80)
         
         return X_train, X_test, y_train, y_test, feature_names

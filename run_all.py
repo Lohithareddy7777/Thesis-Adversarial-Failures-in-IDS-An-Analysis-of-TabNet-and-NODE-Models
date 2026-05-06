@@ -32,6 +32,7 @@ DATASET1 = {
     **DATASET_BASE,
     "name": "UNSW-NB15",
     "data_file": "dataset1/data/UNSW_NB15_training-set.csv",
+    "test_file": "dataset1/data/UNSW_NB15_testing-set.csv",
     "results_subdir": "dataset1",
 }
 
@@ -111,6 +112,7 @@ def _run_dataset(
     run_full_pipeline(
         dataset_name=config["name"],
         data_file=config["data_file"],
+        test_file=config.get("test_file"),
         label_column=config["label_column"],
         epsilon=primary_attack.get("epsilon", config["epsilon"]),
         attack_type=primary_attack.get("attack_type", config["attack_type"]),

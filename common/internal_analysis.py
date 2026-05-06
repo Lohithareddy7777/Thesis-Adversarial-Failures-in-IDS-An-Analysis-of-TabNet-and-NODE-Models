@@ -5,6 +5,7 @@ from pytorch_tabnet.tab_model import TabNetClassifier
 from typing import Dict, Any, Tuple, List
 import os
 from datetime import datetime
+import warnings
 
 from common.utils import print_section_header
 from common.metrics import compute_array_stats
@@ -135,147 +136,8 @@ class InternalBehaviorAnalyzer:
         
         return metrics
     
-    def generate_node_internal_analysis_report(
-        self,
-        node_model,
-        X_baseline: np.ndarray,
-        X_adversarial: np.ndarray,
-        y_true: np.ndarray,
-        y_pred_baseline: np.ndarray,
-        y_pred_adversarial: np.ndarray,
-        confidence_baseline: np.ndarray,
-        confidence_adversarial: np.ndarray,
-        failure_indices: np.ndarray,
-        attack_type: str,
-        dataset_name: str,
-        output_path: str
-    ) -> Dict[str, Any]:
-        """Generate NODE internal behavior analysis report."""
-        print_section_header(f"COMPREHENSIVE NODE INTERNAL ANALYSIS - {dataset_name}")
-        
-        embeddings_baseline = self.extract_node_embeddings(node_model, X_baseline)
-        embeddings_adversarial = self.extract_node_embeddings(node_model, X_adversarial)
-        
-        activation_variance = self.compute_node_activation_variance(embeddings_baseline, embeddings_adversarial)
-        decision_shift = self.compute_decision_boundary_shift(confidence_baseline, confidence_adversarial)
-        neuron_stability = self._compute_neuron_activation_stability(embeddings_baseline, embeddings_adversarial)
-        
-        decision_flips = np.sum(y_pred_baseline != y_pred_adversarial)
-        confidence_drops = confidence_baseline - confidence_adversarial
-        high_drop_ratio = np.sum(confidence_drops > 0.1) / len(confidence_drops)
-        
-        failure_analysis = {}
-        if len(failure_indices) > 0:
-            embeddings_baseline_failures = [emb[failure_indices] for emb in embeddings_baseline]
-            embeddings_adversarial_failures = [emb[failure_indices] for emb in embeddings_adversarial]
-            failure_analysis = self._characterize_node_failures(
-                embeddings_baseline_failures,
-                embeddings_adversarial_failures,
-                confidence_baseline[failure_indices],
-                confidence_adversarial[failure_indices]
-            )
-        
-        report = {
-            'dataset': dataset_name,
-            'attack_type': attack_type,
-            'activation_variance': activation_variance,
-            'decision_shift': decision_shift,
-            'neuron_stability': neuron_stability,
-            'decision_flips': int(decision_flips),
-            'decision_flip_ratio': float(decision_flips / len(y_true)),
-            'high_confidence_drop_ratio': float(high_drop_ratio),
-            'mean_confidence_drop': float(np.mean(confidence_drops)),
-            'max_confidence_drop': float(np.max(confidence_drops)),
-            'failure_count': len(failure_indices),
-            'failure_characterization': failure_analysis
-        }
-        
-        with open(output_path, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("NODE INTERNAL BEHAVIOR ANALYSIS REPORT (RQ2)\n")
-            f.write("=" * 80 + "\n\n")
-            f.write(f"Dataset: {dataset_name}\n")
-            f.write(f"Attack Type: {attack_type}\n")
-            f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            f.write("-" * 80 + "\n1. ACTIVATION VARIANCE ANALYSIS\n" + "-" * 80 + "\n")
-            for key, value in activation_variance.items():
-                f.write(f"{key:40s}: {value:.6f}\n")
-            
-            f.write("\n" + "-" * 80 + "\n2. DECISION BOUNDARY SHIFT\n" + "-" * 80 + "\n")
-            for key, value in decision_shift.items():
-                f.write(f"{key:40s}: {value:.6f}\n")
-            
-            f.write("\n" + "-" * 80 + "\n3. NEURON ACTIVATION STABILITY\n" + "-" * 80 + "\n")
-            for key, value in neuron_stability.items():
-                f.write(f"{key:40s}: {value:.6f}\n")
-            
-            f.write("\n" + "-" * 80 + "\n4. DECISION PATTERNS\n" + "-" * 80 + "\n")
-            f.write(f"{'Decision Flips (Count)':40s}: {decision_flips}\n")
-            f.write(f"{'Decision Flip Ratio':40s}: {decision_flips / len(y_true):.6f}\n")
-            f.write(f"{'High Confidence Drop (>0.1) Ratio':40s}: {high_drop_ratio:.6f}\n")
-            
-            f.write("\n" + "-" * 80 + "\n5. CONFIDENCE DEGRADATION\n" + "-" * 80 + "\n")
-            f.write(f"{'Mean Confidence Drop':40s}: {np.mean(confidence_drops):.6f}\n")
-            f.write(f"{'Max Confidence Drop':40s}: {np.max(confidence_drops):.6f}\n")
-            f.write(f"{'Median Confidence Drop':40s}: {np.median(confidence_drops):.6f}\n")
-            f.write(f"{'Std Dev Confidence Drop':40s}: {np.std(confidence_drops):.6f}\n")
-            
-            f.write("\n" + "-" * 80 + "\n6. FAILURE CHARACTERIZATION\n" + "-" * 80 + "\n")
-            f.write(f"{'Total Failures':40s}: {len(failure_indices)}\n")
-            f.write(f"{'Failure Rate':40s}: {len(failure_indices) / len(y_true) * 100:.2f}%\n")
-            
-            if failure_analysis:
-                for key, value in failure_analysis.items():
-                    if isinstance(value, (int, float)):
-                        f.write(f"{key:40s}: {value:.6f}\n")
-        
-        print(f"NODE internal analysis report saved to: {output_path}")
-        return report
     
-    def _compute_neuron_activation_stability(self, embeddings_baseline: List[np.ndarray], embeddings_adversarial: List[np.ndarray]) -> Dict[str, float]:
-        """Compute neuron activation stability."""
-        from sklearn.metrics.pairwise import cosine_similarity
-        
-        stability_metrics = {}
-        
-        for layer_idx, (emb_base, emb_adv) in enumerate(zip(embeddings_baseline, embeddings_adversarial)):
-            mean_base = emb_base.mean(axis=0)
-            mean_adv = emb_adv.mean(axis=0)
-            
-            similarity = float(cosine_similarity([mean_base], [mean_adv])[0, 0])
-            stability_metrics[f'layer_{layer_idx+1}_cosine_similarity'] = similarity
-            
-            l2_dist = float(np.linalg.norm(mean_base - mean_adv))
-            stability_metrics[f'layer_{layer_idx+1}_l2_distance'] = l2_dist
-        
-        cosine_sims = [v for k, v in stability_metrics.items() if 'cosine' in k]
-        if cosine_sims:
-            stability_metrics['mean_cosine_similarity'] = float(np.mean(cosine_sims))
-        
-        l2_dists = [v for k, v in stability_metrics.items() if 'l2_distance' in k]
-        if l2_dists:
-            stability_metrics['mean_l2_distance'] = float(np.mean(l2_dists))
-        
-        return stability_metrics
-    
-    def _characterize_node_failures(self, embeddings_baseline_failures: List[np.ndarray], embeddings_adversarial_failures: List[np.ndarray], 
-                                   confidence_baseline_failures: np.ndarray, confidence_adversarial_failures: np.ndarray) -> Dict[str, Any]:
-        """Characterize failures in terms of internal behaviors."""
-        characterization = {}
-        
-        conf_drops = confidence_baseline_failures - confidence_adversarial_failures
-        characterization['mean_confidence_drop_in_failures'] = float(np.mean(conf_drops))
-        characterization['max_confidence_drop_in_failures'] = float(np.max(conf_drops))
-        characterization['median_confidence_drop_in_failures'] = float(np.median(conf_drops))
-        
-        if embeddings_baseline_failures and embeddings_adversarial_failures:
-            for layer_idx, (emb_base, emb_adv) in enumerate(zip(embeddings_baseline_failures, embeddings_adversarial_failures)):
-                activation_diff = np.linalg.norm(emb_base - emb_adv, axis=1)
-                characterization[f'layer_{layer_idx+1}_mean_activation_diff'] = float(np.mean(activation_diff))
-                characterization[f'layer_{layer_idx+1}_max_activation_diff'] = float(np.max(activation_diff))
-        
-        return characterization
+
 
     @staticmethod
     def _safe_spearman(x: np.ndarray, y: np.ndarray) -> Tuple[float, float]:

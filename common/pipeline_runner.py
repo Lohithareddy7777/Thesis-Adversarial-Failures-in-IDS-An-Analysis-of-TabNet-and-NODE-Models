@@ -26,11 +26,6 @@ from common.visualization import (
     plot_dataframe_table,
     plot_summary_dataframe_bars,
     plot_feature_importance_shift,
-    plot_activation_variance_comparison,
-    plot_confidence_variation,
-    plot_internal_behavior_deviations,
-    plot_rq2_correlation_heatmap,
-    plot_rq2_correlation_table,
     plot_internal_behavior_summary,
 )
 
@@ -548,6 +543,7 @@ def _run_single_experiment(
 def run_full_pipeline(
     *,
     data_file: str,
+    test_file: str | None = None,
     label_column: str,
     epsilon: float,
     attack_type: str,
@@ -614,12 +610,15 @@ def run_full_pipeline(
     data_dir = os.path.dirname(data_file) or "."
     data_name = os.path.basename(data_file)
     preprocessor = preprocessor_cls(data_dir=data_dir, random_state=random_state)
+    # If an explicit test file path was passed, forward only the basename
+    test_file_param = os.path.basename(test_file) if test_file else None
     X_train, X_test, y_train, y_test, feature_names = preprocessor.preprocess_pipeline(
         data_name,
         label_column,
         use_lasso_prefilter=use_lasso_prefilter,
         lasso_max_features=lasso_max_features,
         max_rows=max_rows,
+        test_file=test_file_param,
     )
 
     if use_lasso_prefilter:

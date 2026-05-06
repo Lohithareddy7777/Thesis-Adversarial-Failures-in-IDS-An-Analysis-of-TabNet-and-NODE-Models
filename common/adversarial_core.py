@@ -7,6 +7,7 @@ import logging
 
 from common.utils import get_feature_bounds, clip_to_bounds
 logger = logging.getLogger(__name__)
+import warnings
 
 
 class AdversarialAttacker:
@@ -158,31 +159,3 @@ class AdversarialAttacker:
         attack_fn = self._resolve_attack_method(attack, tabnet=True)
         return attack_fn(model, X, y, epsilon=epsilon, alpha=alpha, num_iter=num_iter, clip_bounds=clip_bounds)
     
-    def bounded_perturbation_attack(
-        self,
-        X: np.ndarray,
-        epsilon: float = 0.5,
-        perturbation_ratio: float = 0.1,
-        clip_bounds: Tuple[np.ndarray, np.ndarray] = None
-    ) -> np.ndarray:
-        logger.debug(f"Bounded perturbation attack (epsilon={epsilon}, ratio={perturbation_ratio})")
-
-        X_adv = X.copy()
-        n_samples, n_features = X.shape
-        
-        if clip_bounds is None:
-            min_bounds, max_bounds = get_feature_bounds(X)
-        else:
-            min_bounds, max_bounds = clip_bounds
-        
-        n_perturb = int(n_features * perturbation_ratio)
-        
-        for i in range(n_samples):
-            perturb_indices = np.random.choice(n_features, n_perturb, replace=False)
-            
-            perturbations = np.random.uniform(-epsilon, epsilon, n_perturb)
-            
-            X_adv[i, perturb_indices] += perturbations
-        
-        X_adv = clip_to_bounds(X_adv, min_bounds, max_bounds)
-        return X_adv

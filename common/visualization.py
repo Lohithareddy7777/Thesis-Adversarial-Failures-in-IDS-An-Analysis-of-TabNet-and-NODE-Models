@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from pathlib import Path
+import warnings
 
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (10, 6)
@@ -112,114 +113,8 @@ def plot_feature_importance_shift(baseline_importance: pd.DataFrame, adversarial
     fig.suptitle(title, fontsize=14)
     _save_plot(save_path, dpi=320)
 
-def plot_activation_variance_comparison(activation_variance_metrics, title: str, save_path: str):
-    """RQ2: Plot NODE activation variance changes."""
-    if not activation_variance_metrics:
-        return
-    
-    layer_keys = sorted([k for k in activation_variance_metrics.keys() if 'layer_' in k and 'variance_change' in k],
-                       key=lambda x: int(x.split('_')[1]))
-    if not layer_keys:
-        return
-    
-    layer_names = [k.replace('_', ' ').title() for k in layer_keys]
-    values = [activation_variance_metrics[k] for k in layer_keys]
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(range(len(values)), values, color='steelblue', alpha=0.85)
-    for bar, val in zip(bars, values):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(), f'{val:.4f}', ha='center', va='bottom', fontsize=9)
-    
-    ax.set_ylabel('Variance Change (Baseline - Adversarial)', fontsize=11)
-    ax.set_title(title, fontsize=12)
-    ax.set_xticks(range(len(layer_names)))
-    ax.set_xticklabels(layer_names, rotation=15, ha='right')
-    ax.set_ylim([0, max(values) * 1.15 if values else 0.1])
-    ax.grid(axis='y', alpha=0.3)
-    
-    _save_plot(save_path, dpi=320)
 
-def plot_confidence_variation(confidence_baseline: np.ndarray, confidence_adversarial: np.ndarray, title: str, save_path: str, bins: int = 20):
-    """RQ2: Plot confidence variation and degradation patterns."""
-    confidence_drop = confidence_baseline - confidence_adversarial
-    
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    
-    # Left: Distribution
-    ax = axes[0]
-    ax.hist(confidence_drop, bins=bins, color='steelblue', alpha=0.7, edgecolor='black')
-    ax.axvline(np.mean(confidence_drop), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(confidence_drop):.4f}')
-    ax.set_xlabel('Confidence Drop')
-    ax.set_ylabel('Frequency')
-    ax.set_title('Distribution of Confidence Drops')
-    ax.legend()
-    
-    # Middle: Scatter
-    ax = axes[1]
-    scatter = ax.scatter(confidence_baseline, confidence_adversarial, alpha=0.5, s=20, c=confidence_drop, cmap='RdYlGn_r')
-    ax.plot([0, 1], [0, 1], 'k--', alpha=0.3, linewidth=1)
-    ax.set_xlabel('Baseline Confidence')
-    ax.set_ylabel('Adversarial Confidence')
-    ax.set_title('Confidence Degradation Pattern')
-    ax.set_xlim([0, 1])
-    ax.set_ylim([0, 1])
-    plt.colorbar(scatter, ax=ax, label='Confidence Drop')
-    
-    # Right: Quantiles
-    ax = axes[2]
-    quantiles = np.arange(0.1, 1.0, 0.1)
-    quantile_drops = [np.percentile(confidence_drop, q*100) for q in quantiles]
-    bars = ax.bar(range(len(quantiles)), quantile_drops, color='coral', alpha=0.85)
-    ax.set_ylabel('Confidence Drop')
-    ax.set_title('Confidence Drop by Percentile')
-    ax.set_xticks(range(len(quantiles)))
-    ax.set_xticklabels([f'{q:.1f}' for q in quantiles], rotation=45)
-    ax.set_ylim([0, max(quantile_drops) * 1.15])
-    for i, v in enumerate(quantile_drops):
-        ax.text(i, v, f'{v:.4f}', ha='center', va='bottom', fontsize=8)
-    
-    fig.suptitle(title, fontsize=14)
-    _save_plot(save_path, dpi=320, tight_rect=[0, 0, 1, 0.97])
 
-def plot_internal_behavior_deviations(baseline_metrics, adversarial_metrics, metric_names, model_name: str, title: str, save_path: str):
-    """RQ2: Plot internal behavior deviations."""
-    if not metric_names:
-        return
-    
-    baseline_vals = [baseline_metrics.get(m, 0.0) for m in metric_names]
-    adversarial_vals = [adversarial_metrics.get(m, 0.0) for m in metric_names]
-    deviations = np.abs(np.array(baseline_vals) - np.array(adversarial_vals))
-    
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    
-    # Left: Deviation magnitude
-    ax = axes[0]
-    x_pos = np.arange(len(metric_names))
-    bars = ax.bar(x_pos, deviations, color='firebrick', alpha=0.85)
-    ax.set_ylabel('Absolute Deviation')
-    ax.set_title(f'{model_name}: Internal Behavior Deviations')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([m.replace('_', ' ').title() for m in metric_names], rotation=45, ha='right')
-    ax.set_ylim([0, max(deviations) * 1.15 if deviations.max() > 0 else 0.1])
-    for bar, val in zip(bars, deviations):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(), f'{val:.4f}', ha='center', va='bottom', fontsize=8)
-    
-    # Right: Baseline vs Adversarial
-    ax = axes[1]
-    x_pos = np.arange(len(metric_names))
-    width = 0.35
-    ax.bar(x_pos - width/2, baseline_vals, width, label='Baseline', alpha=0.85, color='green')
-    ax.bar(x_pos + width/2, adversarial_vals, width, label='Adversarial', alpha=0.85, color='red')
-    ax.set_ylabel('Metric Value')
-    ax.set_title(f'{model_name}: Baseline vs Adversarial Metrics')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([m.replace('_', ' ').title() for m in metric_names], rotation=45, ha='right')
-    max_val = max(max(baseline_vals), max(adversarial_vals))
-    ax.set_ylim([0, max_val * 1.15 if max_val > 0 else 0.1])
-    ax.legend()
-    
-    fig.suptitle(title, fontsize=14)
-    _save_plot(save_path, dpi=320, tight_rect=[0, 0, 1, 0.97])
 
 def plot_dataframe_table(df, title: str, save_path: str, fontsize: int = 9):
     """Fallback table visualization."""
@@ -505,34 +400,6 @@ def plot_feature_importance(importance_df: pd.DataFrame, title: str, save_path: 
     
     _save_plot(save_path)
 
-def plot_rq2_correlation_heatmap(correlation_df: pd.DataFrame, title: str, save_path: str):
-    """RQ2: Plot correlation heatmap."""
-    if correlation_df.empty:
-        return
-    
-    pivot_data = {}
-    for _, row in correlation_df.iterrows():
-        model = row.get('Model', 'Unknown')
-        metric = row.get('Internal_Metric', 'Unknown')
-        outcome = row.get('Outcome', 'Unknown')
-        corr_val = row.get('Pearson_R', 0.0)
-        key = f"{metric} → {outcome}"
-        if key not in pivot_data:
-            pivot_data[key] = {}
-        pivot_data[key][model] = corr_val
-    
-    if not pivot_data:
-        return
-    
-    heatmap_df = pd.DataFrame(pivot_data).T.fillna(0)
-    
-    fig, ax = plt.subplots(figsize=(10, max(6, len(pivot_data) * 0.4)))
-    sns.heatmap(heatmap_df, annot=True, fmt='.3f', cmap='RdBu_r', center=0,
-               cbar_kws={'label': 'Pearson Correlation'}, ax=ax, vmin=-1, vmax=1)
-    ax.set_title(title, fontsize=12, pad=20)
-    ax.set_xlabel('Model', fontsize=11)
-    ax.set_ylabel('Internal Metric → Failure Outcome', fontsize=11)
-    _save_plot(save_path)
 
 def create_graph_montage(image_paths, save_path: str, title: str = None, ncols: int = 2):
     """Create a montage of images."""
@@ -591,37 +458,6 @@ def plot_model_failure_comparison(df: pd.DataFrame, title: str, save_path: str):
     ax.set_ylim([0, max(df[model_cols].max().max(), 0.1) * 1.15])
     _save_plot(save_path)
 
-def plot_rq2_correlation_table(correlation_df: pd.DataFrame, title: str, save_path: str):
-    """RQ2: Plot correlation analysis as table."""
-    if correlation_df is None or correlation_df.empty:
-        return
-    
-    display_cols = ['feature', 'importance_shift', 'correlation_with_failures', 'correlation_pvalue']
-    if all(col in correlation_df.columns for col in display_cols):
-        table_df = correlation_df[display_cols].head(10).copy()
-        table_df['importance_shift'] = table_df['importance_shift'].apply(lambda x: f"{x:.4f}")
-        table_df['correlation_with_failures'] = table_df['correlation_with_failures'].apply(lambda x: f"{x:.4f}")
-        table_df['correlation_pvalue'] = table_df['correlation_pvalue'].apply(lambda x: f"{x:.4f}")
-        table_df.columns = ['Feature', 'Importance Shift', 'Correlation', 'P-Value']
-    else:
-        table_df = correlation_df.head(10).copy()
-        table_df = table_df.round(4)
-    
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.axis('tight')
-    ax.axis('off')
-    
-    table = ax.table(cellText=table_df.values, colLabels=table_df.columns, cellLoc='center', loc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 2)
-    
-    for i in range(len(table_df.columns)):
-        table[(0, i)].set_facecolor('#4CAF50')
-        table[(0, i)].set_text_props(weight='bold', color='white')
-    
-    fig.suptitle(title, fontsize=12, weight='bold')
-    _save_plot(save_path)
 
 def plot_internal_behavior_summary(summary_rows: pd.DataFrame, title: str, save_path: str):
     """Plot a single unified internal behavior analysis summary."""

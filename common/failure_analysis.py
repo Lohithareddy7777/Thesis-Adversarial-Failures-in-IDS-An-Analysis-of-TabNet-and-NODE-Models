@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, List
 import os
+import warnings
 
 from common.metrics import identify_failure_samples
 from common.utils import print_section_header, print_dict_block
@@ -14,15 +15,6 @@ class FailureAnalyzer:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
     
-    def identify_failure_indices(
-        self,
-        y_true: np.ndarray,
-        y_pred_baseline: np.ndarray,
-        y_pred_adversarial: np.ndarray
-    ) -> np.ndarray:
-        """Identify indices of samples that failed (prediction changed due to adversarial attack)."""
-        failures = (y_pred_baseline == y_true) & (y_pred_adversarial != y_true)
-        return np.where(failures)[0]
     
     def analyze_failures(
         self,

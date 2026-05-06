@@ -7,6 +7,7 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 from typing import Dict, Any, Tuple
+import warnings
 
 
 def compute_array_stats(arr: np.ndarray, name: str = "Values") -> Dict[str, float]:
@@ -68,19 +69,6 @@ def compute_metric_degradation(baseline: Dict[str, float], adversarial: Dict[str
     return degradation
 
 
-def compute_confidence_metrics(confidence_baseline: np.ndarray, confidence_adv: np.ndarray) -> Dict[str, float]:
-    confidence_diff = confidence_baseline - confidence_adv
-    
-    metrics = {
-        'mean_confidence_change': float(np.mean(confidence_diff)),
-        'std_confidence_change': float(np.std(confidence_diff)),
-        'max_confidence_drop': float(np.max(confidence_diff)),
-        'min_confidence_drop': float(np.min(confidence_diff)),
-        'samples_with_collapse': int(np.sum(confidence_diff > 0.3)),
-        'collapse_percentage': float(np.mean(confidence_diff > 0.3) * 100)
-    }
-    
-    return metrics
 
 
 def identify_failure_samples(

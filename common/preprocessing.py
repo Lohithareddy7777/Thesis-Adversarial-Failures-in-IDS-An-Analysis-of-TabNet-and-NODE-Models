@@ -248,21 +248,100 @@ class UNSW_NB15_Preprocessor:
         use_lasso_prefilter: bool = False,
         lasso_max_features: int | None = None,
         max_rows: int | None = None,
+        test_file: str | None = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
         logger.info("="*80)
         logger.info("UNSW-NB15 PREPROCESSING PIPELINE")
         logger.info("="*80)
         
-        df = self.load_data(file_pattern)
-        
-        df = self.clean_data(df)
-        
-        X_train, X_test, y_train, y_test, feature_names = self.prepare_train_test_split(
-            df, label_column, max_rows=max_rows
-        )
-        
-        X_train = self.normalize_features(X_train, fit=True)
-        X_test = self.normalize_features(X_test, fit=False)
+        # If an external test file is provided, load train and test separately
+        if test_file is None:
+            df = self.load_data(file_pattern)
+            df = self.clean_data(df)
+            X_train, X_test, y_train, y_test, feature_names = self.prepare_train_test_split(
+                df, label_column, max_rows=max_rows
+            )
+            X_train = self.normalize_features(X_train, fit=True)
+            X_test = self.normalize_features(X_test, fit=False)
+        else:
+            train_df = self.load_data(file_pattern)
+            test_df = self.load_data(test_file)
+            train_df = self.clean_data(train_df)
+            test_df = self.clean_data(test_df)
+
+            possible_labels = [label_column, 'Label', 'attack_cat', 'Label_binary']
+            label_col = None
+            for col in possible_labels:
+                if col in train_df.columns:
+                    label_col = col
+                    break
+            if label_col is None:
+                for col in possible_labels:
+                    if col in test_df.columns:
+                        label_col = col
+                        break
+            if label_col is None:
+                raise ValueError(f"Could not find label column in train/test. Available train columns: {train_df.columns.tolist()} | test columns: {test_df.columns.tolist()}")
+
+            # Optionally sample down the training set only
+            if max_rows is not None and len(train_df) > max_rows:
+                logger.info(f"Sampling down training set to {max_rows} rows for faster training")
+                train_df, _ = train_test_split(
+                    train_df,
+                    train_size=max_rows,
+                    random_state=self.random_state,
+                    stratify=train_df[label_col],
+                )
+
+            X_train_df = train_df.drop(columns=[label_col]).copy()
+            y_train = train_df[label_col].copy()
+
+            X_test_df = test_df.drop(columns=[label_col]).copy()
+            y_test = test_df[label_col].copy()
+
+            # Remove leakage-prone label proxy columns
+            leakage_candidates = {'label', 'Label', 'attack_cat', 'Label_binary'}
+            leakage_candidates.discard(label_col)
+            leakage_cols = [col for col in X_train_df.columns if col in leakage_candidates]
+            if leakage_cols:
+                logger.info(f"Removing leakage-prone label proxy columns: {leakage_cols}")
+                X_train_df = X_train_df.drop(columns=leakage_cols)
+                X_test_df = X_test_df.drop(columns=[c for c in X_test_df.columns if c in leakage_cols])
+
+            # Convert y to binary in same way as prepare_train_test_split
+            if not is_numeric_dtype(y_train):
+                normal_tokens = {"normal", "benign"}
+                y_train = (~y_train.astype(str).str.strip().str.lower().isin(normal_tokens)).astype(int)
+            elif len(np.unique(y_train)) > 2:
+                y_train = (y_train != 0).astype(int)
+
+            if not is_numeric_dtype(y_test):
+                normal_tokens = {"normal", "benign"}
+                y_test = (~y_test.astype(str).str.strip().str.lower().isin(normal_tokens)).astype(int)
+            elif len(np.unique(y_test)) > 2:
+                y_test = (y_test != 0).astype(int)
+
+            # Encode categoricals using fit on train, apply to test
+            X_train_df = self.encode_categorical(X_train_df.copy(), fit=True, log=True)
+            X_test_df = self.encode_categorical(X_test_df.copy(), fit=False, log=False)
+
+            self.feature_names = X_train_df.columns.tolist()
+            X_train = X_train_df.values
+            X_test = X_test_df.values
+
+            X_train = self.normalize_features(X_train, fit=True)
+            X_test = self.normalize_features(X_test, fit=False)
+            feature_names = self.feature_names
+            # Ensure y arrays are numpy arrays for downstream training code
+            if isinstance(y_train, (pd.Series,)):
+                y_train = y_train.values
+            else:
+                y_train = np.asarray(y_train)
+
+            if isinstance(y_test, (pd.Series,)):
+                y_test = y_test.values
+            else:
+                y_test = np.asarray(y_test)
 
         if use_lasso_prefilter:
             X_train, X_test, feature_names = self.apply_lasso_prefilter(
